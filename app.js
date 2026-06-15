@@ -70,6 +70,11 @@ const el = {
   exportLinksBtn: document.querySelector("#exportLinksBtn"),
   voterFileInput: document.querySelector("#voterFileInput"),
   clearVoterFileBtn: document.querySelector("#clearVoterFileBtn"),
+  driveImageFolderInput: document.querySelector("#driveImageFolderInput"),
+  driveVoterFileInput: document.querySelector("#driveVoterFileInput"),
+  googleApiKeyInput: document.querySelector("#googleApiKeyInput"),
+  loadDriveImagesBtn: document.querySelector("#loadDriveImagesBtn"),
+  loadDriveVotersBtn: document.querySelector("#loadDriveVotersBtn"),
   defaultCityInput: document.querySelector("#defaultCityInput"),
   loggedByInput: document.querySelector("#loggedByInput"),
   collectedByInput: document.querySelector("#collectedByInput"),
@@ -94,6 +99,9 @@ const el = {
 el.defaultCityInput.value = state.defaultCity;
 el.loggedByInput.value = state.loggedBy;
 el.collectedByInput.value = state.collectedBy;
+el.driveImageFolderInput.value = state.driveImageFolder || "";
+el.driveVoterFileInput.value = state.driveVoterFile || "";
+el.googleApiKeyInput.value = state.googleApiKey || "";
 el.imageWidthInput.value = state.layout.imageWidth;
 el.matchHeightInput.value = state.layout.matchHeight;
 el.savedHeightInput.value = state.layout.savedHeight;
@@ -117,6 +125,20 @@ el.saveEntryBtn.addEventListener("click", saveEntry);
 el.exportLinksBtn.addEventListener("click", exportEntries);
 el.voterFileInput.addEventListener("change", importVoterFile);
 el.clearVoterFileBtn.addEventListener("click", clearVoterDirectory);
+el.loadDriveImagesBtn.addEventListener("click", loadDriveImages);
+el.loadDriveVotersBtn.addEventListener("click", loadDriveVoters);
+el.driveImageFolderInput.addEventListener("input", () => {
+  state.driveImageFolder = el.driveImageFolderInput.value.trim();
+  saveState();
+});
+el.driveVoterFileInput.addEventListener("input", () => {
+  state.driveVoterFile = el.driveVoterFileInput.value.trim();
+  saveState();
+});
+el.googleApiKeyInput.addEventListener("input", () => {
+  state.googleApiKey = el.googleApiKeyInput.value.trim();
+  saveState();
+});
 el.defaultCityInput.addEventListener("input", () => {
   state.defaultCity = el.defaultCityInput.value.trim();
   if (!el.entryForm.elements.city.value.trim()) el.entryForm.elements.city.value = state.defaultCity;
@@ -164,6 +186,9 @@ function loadState() {
     collectedBy: "",
     imageFolderName: "",
     voterFileName: "",
+    driveImageFolder: "",
+    driveVoterFile: "",
+    googleApiKey: "",
     imageSettings: { scale: 1, rotation: 0 },
     layout: defaultLayoutSettings,
     appendColumns: defaultAppendColumns,
@@ -269,6 +294,34 @@ async function chooseImageFolder() {
   setView("work");
 }
 
+async function loadDriveImages() {
+  const folderId = driveIdFromInput(el.driveImageFolderInput.value, "folder");
+  if (!folderId) {
+    alert("Paste a Google Drive folder link or folder ID first.");
+    return;
+  }
+
+  try {
+    state.driveImageFolder = el.driveImageFolderInput.value.trim();
+    state.imageFolderName = `Drive folder ${folderId}`;
+    saveState();
+    const files = await listPublicDriveFolderImages(folderId);
+    if (!files.length) {
+      alert("No publicly accessible images were found in that Drive folder. Make sure the folder or images are shared with link access.");
+      return;
+    }
+    imageFiles = files;
+    currentImageIndex = 0;
+    imageView = { scale: state.imageSettings.scale, rotation: state.imageSettings.rotation, x: 0, y: 0 };
+    renderImage();
+    renderSettings();
+    setView("work");
+  } catch (error) {
+    console.error(error);
+    alert("Could not load Drive images. For this version, the folder/images need link access or public access.");
+  }
+}
+
 function moveImage(delta) {
   if (!imageFiles.length) return;
   currentImageIndex = Math.max(0, Math.min(imageFiles.length - 1, currentImageIndex + delta));
@@ -277,7 +330,7 @@ function moveImage(delta) {
 }
 
 function renderImage() {
-  if (currentImageUrl) URL.revokeObjectURL(currentImageUrl);
+  if (currentImageUrl.startsWith("blob:")) URL.revokeObjectURL(currentImageUrl);
 
   if (!imageFiles.length) {
     el.sheetImage.style.display = "none";
@@ -289,7 +342,7 @@ function renderImage() {
   }
 
   const file = imageFiles[currentImageIndex];
-  currentImageUrl = URL.createObjectURL(file);
+  currentImageUrl = file.url || URL.createObjectURL(file);
   el.sheetImage.src = currentImageUrl;
   el.sheetImage.style.display = "block";
   el.imageEmpty.style.display = "none";
@@ -364,20 +417,91 @@ async function importVoterFile(event) {
   try {
     el.voterMemoryLabel.textContent = `Importing ${file.name}...`;
     const rows = parseCsv(await file.text());
-    state.voterRows = rows;
-    state.columns = Object.keys(rows[0] || {});
-    state.voterFileName = file.name;
-    autoMapColumns();
-    rebuildVoters();
-    saveState();
-    renderSettings();
-    renderMatches();
+    loadVoterRows(rows, file.name);
   } catch (error) {
     console.error(error);
     alert("The voter file could not be imported. If this is Excel, export it as CSV first. If it is a huge CSV, we may need to move the directory into a database/index.");
   } finally {
     event.target.value = "";
   }
+}
+
+async function loadDriveVoters() {
+  const fileId = driveIdFromInput(el.driveVoterFileInput.value, "file");
+  if (!fileId) {
+    alert("Paste a Google Drive CSV file link or file ID first.");
+    return;
+  }
+
+  try {
+    state.driveVoterFile = el.driveVoterFileInput.value.trim();
+    state.voterFileName = `Drive CSV ${fileId}`;
+    el.voterMemoryLabel.textContent = "Importing Drive CSV...";
+    const response = await fetch(driveDownloadUrl(fileId));
+    if (!response.ok) throw new Error(`Drive CSV request failed: ${response.status}`);
+    const rows = parseCsv(await response.text());
+    loadVoterRows(rows, state.voterFileName);
+  } catch (error) {
+    console.error(error);
+    alert("Could not load the Drive CSV. Make sure it is a CSV file and shared so this browser can download it.");
+  }
+}
+
+function loadVoterRows(rows, filename) {
+  state.voterRows = rows;
+  state.columns = Object.keys(rows[0] || {});
+  state.voterFileName = filename;
+  autoMapColumns();
+  rebuildVoters();
+  saveState();
+  renderSettings();
+  scheduleRenderMatches();
+}
+
+async function listPublicDriveFolderImages(folderId) {
+  if (!state.googleApiKey) {
+    throw new Error("A Google API key is required to list a Drive folder without OAuth.");
+  }
+
+  const params = new URLSearchParams({
+    key: state.googleApiKey,
+    q: `'${folderId}' in parents and trashed = false`,
+    fields: "files(id,name,mimeType)",
+    orderBy: "name",
+    pageSize: "1000",
+  });
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files?${params}`);
+  if (!response.ok) throw new Error(`Drive folder request failed: ${response.status}`);
+  const data = await response.json();
+  return (data.files || [])
+    .filter((file) => file.mimeType?.startsWith("image/"))
+    .sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }))
+    .map((file) => ({
+      name: file.name,
+      type: file.mimeType,
+      url: driveDownloadUrl(file.id),
+    }));
+}
+
+function driveDownloadUrl(fileId) {
+  if (state.googleApiKey) {
+    const params = new URLSearchParams({ alt: "media", key: state.googleApiKey });
+    return `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?${params}`;
+  }
+  return `https://drive.google.com/uc?export=download&id=${encodeURIComponent(fileId)}`;
+}
+
+function driveIdFromInput(value, kind) {
+  const text = value.trim();
+  if (!text) return "";
+  const patterns = kind === "folder"
+    ? [/\/folders\/([a-zA-Z0-9_-]+)/, /[?&]id=([a-zA-Z0-9_-]+)/]
+    : [/\/d\/([a-zA-Z0-9_-]+)/, /[?&]id=([a-zA-Z0-9_-]+)/, /\/file\/d\/([a-zA-Z0-9_-]+)/];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return match[1];
+  }
+  return /^[a-zA-Z0-9_-]{20,}$/.test(text) ? text : "";
 }
 
 function clearVoterDirectory() {
