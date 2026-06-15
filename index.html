@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Petition Workstation</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <h1>Petition Workstation</h1>
+        <p>Read each sheet, type what you see, and link it to the voter directory.</p>
+      </div>
+      <div class="header-sheet-controls">
+        <div class="sheet-toolbar">
+          <div class="sheet-picker">
+            <button id="chooseImageFolderBtn" type="button">Image Folder</button>
+            <button id="prevImageBtn" type="button" title="Previous sheet">Prev</button>
+            <button id="nextImageBtn" type="button" title="Next sheet">Next</button>
+          </div>
+          <div class="sheet-tools">
+            <button id="rotateLeftBtn" type="button" title="Rotate left">Rotate Left</button>
+            <button id="rotateRightBtn" type="button" title="Rotate right">Rotate Right</button>
+            <button id="zoomOutBtn" type="button" title="Zoom out">Zoom Out</button>
+            <button id="zoomInBtn" type="button" title="Zoom in">Zoom In</button>
+            <button id="fitBtn" type="button" title="Fit image">Fit</button>
+          </div>
+        </div>
+        <div class="sheet-status">
+          <span id="imageCounter">No images loaded</span>
+          <span id="currentImageName"></span>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Views">
+        <button id="workTab" class="active" type="button">Work</button>
+        <button id="settingsTab" type="button">Settings</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="workView" class="view active">
+        <section class="image-pane">
+          <div id="imageStage" class="image-stage">
+            <img id="sheetImage" alt="Selected petition sheet" />
+            <div id="imageEmpty" class="empty-state">Choose the folder that contains the petition sheet photos.</div>
+          </div>
+        </section>
+
+        <aside class="lookup-pane">
+          <section class="panel">
+            <div class="panel-header">
+              <h2>Current Line</h2>
+              <button id="saveEntryBtn" type="button">Save Entry</button>
+            </div>
+            <form id="entryForm" class="entry-grid">
+              <label>Sheet<input name="sheet" readonly /></label>
+              <label>Line<input name="line" inputmode="numeric" placeholder="Line #" /></label>
+              <label>First<input name="firstName" autocomplete="off" /></label>
+              <label>Middle<input name="middleName" autocomplete="off" /></label>
+              <label>Last<input name="lastName" autocomplete="off" /></label>
+              <label>House #<input name="houseNumber" autocomplete="off" /></label>
+              <label class="wide">Street<input name="street" autocomplete="off" /></label>
+              <label>City<input name="city" autocomplete="off" /></label>
+              <label>
+                Status
+                <select name="petitionStatus">
+                  <option value="Signed">Signed</option>
+                  <option value="Not Qualified">Not Qualified</option>
+                  <option value="Needs Review">Needs Review</option>
+                </select>
+              </label>
+              <label class="wide">Notes<input name="notes" autocomplete="off" /></label>
+            </form>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-header">
+              <h2>Voter Matches</h2>
+              <span id="resultCount">0 results</span>
+            </div>
+            <div id="matchList" class="match-list"></div>
+          </section>
+
+          <section class="panel queue-panel">
+            <div class="panel-header">
+              <h2>Saved Links</h2>
+              <button id="exportLinksBtn" type="button">Export CSV</button>
+            </div>
+            <div id="entryList" class="entry-list"></div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="settingsView" class="view settings-view">
+        <section class="panel">
+          <h2>Source Files</h2>
+          <div class="settings-grid">
+            <label>
+              Petition image folder
+              <button id="settingsImageFolderBtn" type="button">Choose Folder</button>
+              <span id="imageFolderLabel" class="source-label">Not selected</span>
+            </label>
+            <label>
+              Voter directory
+              <input id="voterFileInput" type="file" accept=".csv,.xlsx,.xls,text/csv" />
+              <span id="voterFileLabel" class="source-label">Not selected</span>
+            </label>
+            <label>
+              Loaded directory
+              <button id="clearVoterFileBtn" type="button">Clear Directory</button>
+              <span id="voterMemoryLabel" class="source-label">Directory is loaded for this browser session.</span>
+            </label>
+            <label>
+              Default city
+              <input id="defaultCityInput" placeholder="Used when city is blank" />
+            </label>
+            <label>
+              Logged by
+              <input id="loggedByInput" placeholder="Person doing entry" />
+            </label>
+            <label>
+              Collected by
+              <input id="collectedByInput" placeholder="Default petition circulator" />
+            </label>
+          </div>
+          <p class="hint">Large voter files are loaded into memory for the current browser session. Re-select the voter file after refreshing or reopening.</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Export Columns</h2>
+            <span>Appended after the voter row</span>
+          </div>
+          <div id="appendColumnGrid" class="mapping-grid"></div>
+          <p class="hint">Use up to six campaign columns. Leave a column name blank to skip it.</p>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Layout</h2>
+            <span>Saved per browser</span>
+          </div>
+          <div class="settings-grid">
+            <label>
+              Image area width
+              <input id="imageWidthInput" type="range" min="45" max="75" step="1" />
+            </label>
+            <label>
+              Voter matches height
+              <input id="matchHeightInput" type="range" min="220" max="720" step="20" />
+            </label>
+            <label>
+              Saved links height
+              <input id="savedHeightInput" type="range" min="120" max="520" step="20" />
+            </label>
+            <label>
+              Current line layout
+              <select id="entryLayoutInput">
+                <option value="compact">Compact wide</option>
+                <option value="comfortable">Comfortable</option>
+              </select>
+            </label>
+            <label>
+              Current line width
+              <input id="entryWidthInput" type="range" min="320" max="1200" step="20" />
+            </label>
+            <label>
+              Current line columns
+              <input id="entryColumnsInput" type="range" min="2" max="8" step="1" />
+            </label>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h2>Voter Column Mapping</h2>
+            <button id="autoMapBtn" type="button">Auto Map</button>
+          </div>
+          <div id="mappingGrid" class="mapping-grid"></div>
+        </section>
+
+        <section class="panel">
+          <h2>Directory Preview</h2>
+          <div id="directorySummary" class="directory-summary">No voter directory loaded.</div>
+          <div id="directoryPreview" class="directory-preview"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="matchTemplate">
+      <article class="match-card">
+        <button class="link-match" type="button">Link</button>
+        <div>
+          <h3></h3>
+          <p class="match-address"></p>
+          <p class="match-meta"></p>
+        </div>
+        <strong class="match-score"></strong>
+      </article>
+    </template>
+
+    <template id="entryTemplate">
+      <article class="entry-row">
+        <button class="load-entry" type="button">Load</button>
+        <div>
+          <span class="entry-name"></span>
+          <span class="entry-meta"></span>
+        </div>
+        <div class="entry-actions">
+          <button class="unlink-entry" type="button">Unlink</button>
+          <button class="delete-entry" type="button">Delete</button>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
