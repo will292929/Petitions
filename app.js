@@ -49,6 +49,7 @@ const el = {
   workView: document.querySelector("#workView"),
   settingsView: document.querySelector("#settingsView"),
   chooseImageFolderBtn: document.querySelector("#chooseImageFolderBtn"),
+  imageFolderInput: document.querySelector("#imageFolderInput"),
   settingsImageFolderBtn: document.querySelector("#settingsImageFolderBtn"),
   prevImageBtn: document.querySelector("#prevImageBtn"),
   nextImageBtn: document.querySelector("#nextImageBtn"),
@@ -75,6 +76,7 @@ const el = {
   googleApiKeyInput: document.querySelector("#googleApiKeyInput"),
   loadDriveImagesBtn: document.querySelector("#loadDriveImagesBtn"),
   loadDriveVotersBtn: document.querySelector("#loadDriveVotersBtn"),
+  openDriveVotersBtn: document.querySelector("#openDriveVotersBtn"),
   defaultCityInput: document.querySelector("#defaultCityInput"),
   loggedByInput: document.querySelector("#loggedByInput"),
   collectedByInput: document.querySelector("#collectedByInput"),
@@ -114,6 +116,7 @@ el.workTab.addEventListener("click", () => setView("work"));
 el.settingsTab.addEventListener("click", () => setView("settings"));
 el.chooseImageFolderBtn.addEventListener("click", chooseImageFolder);
 el.settingsImageFolderBtn.addEventListener("click", chooseImageFolder);
+el.imageFolderInput.addEventListener("change", importImageFolderInput);
 el.prevImageBtn.addEventListener("click", () => moveImage(-1));
 el.nextImageBtn.addEventListener("click", () => moveImage(1));
 el.rotateLeftBtn.addEventListener("click", () => rotateImage(-90));
@@ -127,6 +130,7 @@ el.voterFileInput.addEventListener("change", importVoterFile);
 el.clearVoterFileBtn.addEventListener("click", clearVoterDirectory);
 el.loadDriveImagesBtn.addEventListener("click", loadDriveImages);
 el.loadDriveVotersBtn.addEventListener("click", loadDriveVoters);
+el.openDriveVotersBtn.addEventListener("click", openDriveVoterDownload);
 el.driveImageFolderInput.addEventListener("input", () => {
   state.driveImageFolder = el.driveImageFolderInput.value.trim();
   saveState();
@@ -269,7 +273,7 @@ function setView(view) {
 
 async function chooseImageFolder() {
   if (!window.showDirectoryPicker) {
-    alert("This browser does not support folder selection. Use Chrome or Edge for the image folder workflow.");
+    el.imageFolderInput.click();
     return;
   }
 
@@ -284,9 +288,24 @@ async function chooseImageFolder() {
     }
   }
 
-  imageFiles = files.sort((left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }));
+  loadImageFiles(files, directoryHandle.name);
+}
+
+function importImageFolderInput(event) {
+  const files = [...event.target.files].filter((file) => IMAGE_TYPES.has(file.type) || /\.(jpe?g|png|webp|gif|bmp)$/i.test(file.name));
+  const folderName = files[0]?.webkitRelativePath?.split("/")[0] || "Selected image folder";
+  loadImageFiles(files, folderName);
+  event.target.value = "";
+}
+
+function loadImageFiles(files, folderName) {
+  if (!files.length) {
+    alert("No image files were found in that folder.");
+    return;
+  }
+  imageFiles = files.sort((left, right) => displayImageName(left).localeCompare(displayImageName(right), undefined, { numeric: true }));
   currentImageIndex = 0;
-  state.imageFolderName = directoryHandle.name;
+  state.imageFolderName = folderName;
   imageView = { scale: state.imageSettings.scale, rotation: state.imageSettings.rotation, x: 0, y: 0 };
   saveState();
   renderImage();
@@ -318,7 +337,7 @@ async function loadDriveImages() {
     setView("work");
   } catch (error) {
     console.error(error);
-    alert("Could not load Drive images. For this version, the folder/images need link access or public access.");
+    alert("Could not load Drive images. For this version, the folder/images need link access or public access, and folder loading needs a Google API key.");
   }
 }
 
@@ -347,8 +366,8 @@ function renderImage() {
   el.sheetImage.style.display = "block";
   el.imageEmpty.style.display = "none";
   el.imageCounter.textContent = `${currentImageIndex + 1} of ${imageFiles.length}`;
-  el.currentImageName.textContent = file.name;
-  el.entryForm.elements.sheet.value = file.name;
+  el.currentImageName.textContent = displayImageName(file);
+  el.entryForm.elements.sheet.value = displayImageName(file);
   applyImageTransform();
 }
 
@@ -427,7 +446,9 @@ async function importVoterFile(event) {
 }
 
 async function loadDriveVoters() {
-  const fileId = driveIdFromInput(el.driveVoterFileInput.value, "file");
+  const input = el.driveVoterFileInput.value;
+  const sheetId = googleSheetIdFromInput(input);
+  const fileId = sheetId || driveIdFromInput(input, "file");
   if (!fileId) {
     alert("Paste a Google Drive CSV file link or file ID first.");
     return;
@@ -435,16 +456,35 @@ async function loadDriveVoters() {
 
   try {
     state.driveVoterFile = el.driveVoterFileInput.value.trim();
-    state.voterFileName = `Drive CSV ${fileId}`;
+    state.voterFileName = sheetId ? `Google Sheet ${sheetId}` : `Drive CSV ${fileId}`;
     el.voterMemoryLabel.textContent = "Importing Drive CSV...";
-    const response = await fetch(driveDownloadUrl(fileId));
-    if (!response.ok) throw new Error(`Drive CSV request failed: ${response.status}`);
-    const rows = parseCsv(await response.text());
+    const response = await fetch(sheetId ? googleSheetCsvUrl(sheetId) : driveDownloadUrl(fileId));
+    const text = await response.text();
+    if (!response.ok) throw new Error(`Google returned HTTP ${response.status}. The file may not be shared for download.`);
+    if (looksLikeHtml(text)) {
+      throw new Error("Google returned a web page instead of CSV. The file is probably private, not shared for download, or needs Google sign-in.");
+    }
+    if (!text.includes(",") && !text.includes("\t") && !text.includes("\n")) {
+      throw new Error("The downloaded file does not look like CSV.");
+    }
+    const rows = parseCsv(text);
+    if (!rows.length) throw new Error("The CSV loaded, but no data rows were found.");
     loadVoterRows(rows, state.voterFileName);
   } catch (error) {
     console.error(error);
-    alert("Could not load the Drive CSV. Make sure it is a CSV file and shared so this browser can download it.");
+    alert(`Could not load the Drive CSV. ${friendlyDriveError(error)}`);
   }
+}
+
+function openDriveVoterDownload() {
+  const input = el.driveVoterFileInput.value;
+  const sheetId = googleSheetIdFromInput(input);
+  const fileId = sheetId || driveIdFromInput(input, "file");
+  if (!fileId) {
+    alert("Paste a Google Drive CSV/Sheet link or file ID first.");
+    return;
+  }
+  window.open(sheetId ? googleSheetCsvUrl(sheetId) : driveDownloadUrl(fileId), "_blank", "noopener");
 }
 
 function loadVoterRows(rows, filename) {
@@ -502,6 +542,25 @@ function driveIdFromInput(value, kind) {
     if (match) return match[1];
   }
   return /^[a-zA-Z0-9_-]{20,}$/.test(text) ? text : "";
+}
+
+function friendlyDriveError(error) {
+  if (error.message === "Failed to fetch") {
+    return "The browser blocked the Drive request. This often happens from file:// pages. Use Open Drive Download, save the CSV, then import it with Choose File, or host the app on an https site with Google OAuth/proxy support.";
+  }
+  return error.message;
+}
+
+function googleSheetIdFromInput(value) {
+  return value.trim().match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1] || "";
+}
+
+function googleSheetCsvUrl(sheetId) {
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=csv&gid=0`;
+}
+
+function looksLikeHtml(text) {
+  return /^\s*<!doctype html/i.test(text) || /^\s*<html/i.test(text) || text.includes("<title>Google Drive");
 }
 
 function clearVoterDirectory() {
@@ -838,6 +897,8 @@ function clearEntryAfterSave() {
   const form = el.entryForm.elements;
   const nextLine = Number(form.line.value) ? String(Number(form.line.value) + 1) : "";
   form.line.value = nextLine;
+  form.petitionStatus.value = "Signed";
+  form.notes.value = "";
 }
 
 function renderEntries() {
@@ -991,6 +1052,10 @@ function download(filename, content) {
 
 function displayName(person) {
   return [person.firstName, person.middleName, person.lastName].filter(Boolean).join(" ") || "Unnamed";
+}
+
+function displayImageName(file) {
+  return file.webkitRelativePath || file.name || "Untitled image";
 }
 
 function displayAddress(person) {

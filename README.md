@@ -15,7 +15,9 @@ A local browser app for working through photographed petition sheets and linking
 
 ## Current Notes
 
-- Petition images stay local and are loaded through the browser folder picker.
+- Petition images can be loaded from a local folder; the app sorts image files and steps through them one at a time with Prev/Next.
+- Google Drive shared sources can be loaded from Settings by pasting a Drive image folder link/ID and a Drive voter CSV or Google Sheet link/ID.
+- Drive folder image loading requires a Google API key. Restrict that key to the app's domain before using it online.
 - The image viewer supports previous/next, rotate, zoom, mouse wheel zoom, and drag-to-pan.
 - Rotation and zoom are saved and carry to the next sheet.
 - Layout settings let each browser adjust image width, voter match height, saved-link height, and the current-line form width/column wrapping.

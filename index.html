@@ -16,6 +16,7 @@
         <div class="sheet-toolbar">
           <div class="sheet-picker">
             <button id="chooseImageFolderBtn" type="button">Image Folder</button>
+            <input id="imageFolderInput" class="hidden-input" type="file" accept="image/*" multiple webkitdirectory />
             <button id="prevImageBtn" type="button" title="Previous sheet">Prev</button>
             <button id="nextImageBtn" type="button" title="Next sheet">Next</button>
           </div>
@@ -112,9 +113,10 @@
               <button id="loadDriveImagesBtn" type="button">Load Drive Images</button>
             </label>
             <label>
-              Google Drive voter CSV
-              <input id="driveVoterFileInput" placeholder="Paste CSV file link or file ID" />
-              <button id="loadDriveVotersBtn" type="button">Load Drive CSV</button>
+              Google Drive voter CSV / Sheet
+              <input id="driveVoterFileInput" placeholder="Paste CSV/Sheet link or file ID" />
+              <button id="loadDriveVotersBtn" type="button">Load Drive Voters</button>
+              <button id="openDriveVotersBtn" type="button">Open Drive Download</button>
             </label>
             <label>
               Google API key
@@ -138,7 +140,7 @@
               <input id="collectedByInput" placeholder="Default petition circulator" />
             </label>
           </div>
-          <p class="hint">Large voter files are loaded into memory for the current browser session. Re-select the voter file after refreshing or reopening.</p>
+          <p class="hint">Large voter files are loaded into memory for the current browser session. If Drive loading is blocked, use Open Drive Download, save the CSV, then import it with Choose File.</p>
         </section>
 
         <section class="panel">
