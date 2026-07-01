@@ -1115,10 +1115,29 @@ function parseCsv(text) {
     .map((cells) => Object.fromEntries(headers.map((header, index) => [header, cells[index] || ""])));
 }
 
-function toCsv(rows) {
+function toCsv(rows, suppliedHeaders = []) {
   if (!rows.length) return "";
-  const headers = Object.keys(rows[0]);
-  return [headers.join(","), ...rows.map((row) => headers.map((header) => csvEscape(row[header])).join(","))].join("\n");
+
+  /*
+   * Use explicitly supplied headers when available. Otherwise, construct
+   * a union of every field found anywhere in the exported rows.
+   */
+  const headers = suppliedHeaders.length
+    ? suppliedHeaders
+    : [
+        ...new Set(
+          rows.flatMap((row) => Object.keys(row || {}))
+        ),
+      ];
+
+  return [
+    headers.map(csvEscape).join(","),
+    ...rows.map((row) =>
+      headers
+        .map((header) => csvEscape(row?.[header] ?? ""))
+        .join(",")
+    ),
+  ].join("\n");
 }
 
 function csvEscape(value) {
