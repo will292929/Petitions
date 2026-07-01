@@ -950,13 +950,99 @@ function loadEntry(entry) {
 }
 
 function exportEntries() {
-  const rows = state.entries
-    .filter((entry) => entry.linkStatus === "linked")
-    .map((entry) => ({
-      ...(entry.voterRow || {}),
-      ...appendedExportValues(entry),
-    }));
-  download("petition-linked-entries.csv", toCsv(rows));
+  const linkedEntries = state.entries.filter(
+    (entry) => entry.linkStatus === "linked"
+  );
+
+  /*
+   * Build lookup tables so older saved links whose voterRow is empty
+   * can be restored from the currently loaded voter directory.
+   */
+  const voterRowsByRncId = new Map();
+  const voterRowsByDocId = new Map();
+
+  voters.forEach((voter) => {
+    if (voter.rncVoterId) {
+      voterRowsByRncId.set(String(voter.rncVoterId).trim(), voter.raw);
+    }
+
+    if (voter.voterIdDoc) {
+      voterRowsByDocId.set(String(voter.voterIdDoc).trim(), voter.raw);
+    }
+  });
+
+  const preparedRows = linkedEntries.map((entry) => {
+    let originalVoterRow = entry.voterRow || {};
+
+    /*
+     * Recover the original row when an older saved entry has a voter ID
+     * but does not contain the full voter database row.
+     */
+    if (!Object.keys(originalVoterRow).length) {
+      const rncId = String(entry.linkedRncVoterId || "").trim();
+      const docId = String(entry.linkedVoterIdDoc || "").trim();
+
+      originalVoterRow =
+        voterRowsByRncId.get(rncId) ||
+        voterRowsByDocId.get(docId) ||
+        {};
+    }
+
+    return {
+      originalVoterRow,
+      exportRow: {
+        ...originalVoterRow,
+        ...appendedExportValues(entry),
+      },
+    };
+  });
+
+  const appendHeaders = state.appendColumns
+    .filter((column) => column.name.trim())
+    .map((column) => column.name.trim());
+
+  const appendHeaderSet = new Set(appendHeaders);
+  const voterHeaders = [];
+  const voterHeaderSet = new Set();
+
+  /*
+   * Start with the original voter-file column order.
+   */
+  state.columns.forEach((header) => {
+    if (
+      header &&
+      !appendHeaderSet.has(header) &&
+      !voterHeaderSet.has(header)
+    ) {
+      voterHeaderSet.add(header);
+      voterHeaders.push(header);
+    }
+  });
+
+  /*
+   * Also include any voter columns found in saved rows that are not
+   * present in the currently loaded source-file definition.
+   */
+  preparedRows.forEach(({ originalVoterRow }) => {
+    Object.keys(originalVoterRow).forEach((header) => {
+      if (
+        header &&
+        !appendHeaderSet.has(header) &&
+        !voterHeaderSet.has(header)
+      ) {
+        voterHeaderSet.add(header);
+        voterHeaders.push(header);
+      }
+    });
+  });
+
+  const headers = [...voterHeaders, ...appendHeaders];
+  const rows = preparedRows.map(({ exportRow }) => exportRow);
+
+  download(
+    "petition-linked-entries.csv",
+    toCsv(rows, headers)
+  );
 }
 
 function appendedExportValues(entry) {
